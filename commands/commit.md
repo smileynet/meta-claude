@@ -41,7 +41,6 @@ Generate a commit message for the currently staged changes and commit them.
 
 7. **Execute commit**
    - Use HEREDOC format for multi-line messages
-   - Add Claude Code attribution footer
 
 ## Commit Format
 
