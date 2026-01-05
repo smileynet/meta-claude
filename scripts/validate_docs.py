@@ -173,12 +173,18 @@ class DocValidator:
         """Check and optionally fix formatting issues."""
         modified = False
         new_lines = []
+        in_code_block = False
 
         for i, line in enumerate(lines, 1):
             original_line = line
 
-            # Check for tabs
-            if "\t" in line:
+            # Track code block state
+            stripped = line.strip()
+            if stripped.startswith("```") or stripped.startswith("~~~"):
+                in_code_block = not in_code_block
+
+            # Check for tabs (skip code blocks)
+            if "\t" in line and not in_code_block:
                 self._add_issue(
                     path, i, "content", "warning",
                     "Tab character found (use spaces)",
@@ -234,20 +240,24 @@ class DocValidator:
 
     def _check_frontmatter(self, path: Path, content: str, lines: list[str]) -> None:
         """Check YAML frontmatter validity."""
+        # Only SKILL.md files require frontmatter
+        is_skill_md = path.name == "SKILL.md"
+
         # Check for frontmatter presence
         if not lines or lines[0] != "---":
-            self._add_issue(
-                path, 1, "content", "error",
-                "Missing YAML frontmatter (should start with ---)",
-                auto_fixable=True,
-                fix_description="Add frontmatter delimiters"
-            )
-            if self.auto_fix and not self.dry_run:
-                # Add frontmatter
-                folder_name = path.parent.name
-                new_content = f'---\nname: {folder_name}\ndescription: "TODO: Add description with trigger keywords"\n---\n\n{content}'
-                path.write_text(new_content, encoding="utf-8")
-                self.fixed.append(f"{path.name} - Added frontmatter with name and description")
+            if is_skill_md:
+                self._add_issue(
+                    path, 1, "content", "error",
+                    "Missing YAML frontmatter (should start with ---)",
+                    auto_fixable=True,
+                    fix_description="Add frontmatter delimiters"
+                )
+                if self.auto_fix and not self.dry_run:
+                    # Add frontmatter
+                    folder_name = path.parent.name
+                    new_content = f'---\nname: {folder_name}\ndescription: "TODO: Add description with trigger keywords"\n---\n\n{content}'
+                    path.write_text(new_content, encoding="utf-8")
+                    self.fixed.append(f"{path.name} - Added frontmatter with name and description")
             return
 
         # Find closing ---
@@ -275,44 +285,45 @@ class DocValidator:
             )
             return
 
-        # Check required fields
-        if "name" not in frontmatter:
-            self._add_issue(
-                path, None, "content", "error",
-                "Missing required field: name",
-                auto_fixable=True,
-                fix_description="Generate name from folder"
-            )
-
-        if "description" not in frontmatter:
-            self._add_issue(
-                path, None, "content", "error",
-                "Missing required field: description",
-                auto_fixable=True,
-                fix_description="Add placeholder description"
-            )
-        elif frontmatter.get("description"):
-            desc = frontmatter["description"]
-            # Check description quality
-            if len(desc) < 20:
+        # Check required fields (only for SKILL.md)
+        if is_skill_md:
+            if "name" not in frontmatter:
                 self._add_issue(
-                    path, None, "content", "warning",
-                    f"Description too short ({len(desc)} chars). Add trigger keywords."
-                )
-            if "use when" not in desc.lower() and "use for" not in desc.lower():
-                self._add_issue(
-                    path, None, "content", "info",
-                    "Description could include 'Use when...' trigger phrases"
+                    path, None, "content", "error",
+                    "Missing required field: name",
+                    auto_fixable=True,
+                    fix_description="Generate name from folder"
                 )
 
-        # Check name format
-        if "name" in frontmatter:
-            name = frontmatter["name"]
-            if not re.match(r"^[a-z0-9-]+$", name):
+            if "description" not in frontmatter:
                 self._add_issue(
-                    path, None, "content", "warning",
-                    f"Name '{name}' should use only lowercase, numbers, and hyphens"
+                    path, None, "content", "error",
+                    "Missing required field: description",
+                    auto_fixable=True,
+                    fix_description="Add placeholder description"
                 )
+            elif frontmatter.get("description"):
+                desc = frontmatter["description"]
+                # Check description quality
+                if len(desc) < 20:
+                    self._add_issue(
+                        path, None, "content", "warning",
+                        f"Description too short ({len(desc)} chars). Add trigger keywords."
+                    )
+                if "use when" not in desc.lower() and "use for" not in desc.lower():
+                    self._add_issue(
+                        path, None, "content", "info",
+                        "Description could include 'Use when...' trigger phrases"
+                    )
+
+            # Check name format
+            if "name" in frontmatter:
+                name = frontmatter["name"]
+                if not re.match(r"^[a-z0-9-]+$", name):
+                    self._add_issue(
+                        path, None, "content", "warning",
+                        f"Name '{name}' should use only lowercase, numbers, and hyphens"
+                    )
 
         # Check allowed-tools if present
         if "allowed-tools" in frontmatter:
@@ -335,13 +346,29 @@ class DocValidator:
                     f"Invalid model: {model}. Use: {', '.join(self.VALID_MODELS)}"
                 )
 
+    def _is_in_code_block(self, lines: list[str], line_num: int) -> bool:
+        """Check if a line number is inside a fenced code block."""
+        in_code_block = False
+        for i, line in enumerate(lines[:line_num], 1):
+            stripped = line.strip()
+            if stripped.startswith("```") or stripped.startswith("~~~"):
+                in_code_block = not in_code_block
+        return in_code_block
+
     def _check_links(self, path: Path, content: str, lines: list[str]) -> None:
         """Check internal links and references."""
         # Pattern for markdown links: [text](path)
         link_pattern = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
 
         for i, line in enumerate(lines, 1):
-            for match in link_pattern.finditer(line):
+            # Skip lines inside code blocks
+            if self._is_in_code_block(lines, i - 1):
+                continue
+
+            # Skip inline code
+            line_no_inline_code = re.sub(r'`[^`]+`', '', line)
+
+            for match in link_pattern.finditer(line_no_inline_code):
                 link_text, link_path = match.groups()
 
                 # Skip external links
@@ -350,6 +377,10 @@ class DocValidator:
 
                 # Skip anchor links
                 if link_path.startswith("#"):
+                    continue
+
+                # Skip ~ paths (user home relative - can't validate portably)
+                if link_path.startswith("~"):
                     continue
 
                 # Resolve relative path
@@ -369,10 +400,21 @@ class DocValidator:
                     )
 
         # Check @file references
-        at_pattern = re.compile(r'@([~./][^\s\n]+)')
+        at_pattern = re.compile(r'@([~./][^\s\n`]+)')
         for i, line in enumerate(lines, 1):
-            for match in at_pattern.finditer(line):
+            # Skip lines inside code blocks
+            if self._is_in_code_block(lines, i - 1):
+                continue
+
+            # Skip inline code
+            line_no_inline_code = re.sub(r'`[^`]+`', '', line)
+
+            for match in at_pattern.finditer(line_no_inline_code):
                 ref_path = match.group(1)
+
+                # Skip paths with wildcards or regex patterns
+                if any(c in ref_path for c in ['*', '?', '"', "'"]):
+                    continue
 
                 # Expand ~
                 if ref_path.startswith("~"):
