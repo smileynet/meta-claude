@@ -115,6 +115,31 @@ Split commits when changes serve different purposes:
 - **Refactor + Feature** - Separate (refactor first, then feature)
 - **Multiple Bug Fixes** - Separate unless fixing same root cause
 
+## Claude Code Attribution Setting
+
+By default, Claude Code adds a footer to commits:
+
+```
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+**Recommendation**: Disable this footer. It adds noise to commit history and the commit message itself should stand on its own merits. The value is in the message content, not attribution.
+
+To disable, add to `~/.claude/settings.json`:
+
+```json
+{
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  }
+}
+```
+
+This removes the footer from both commits and pull request descriptions.
+
 ## Merge and Branch Strategies
 
 For detailed guidance on merge vs rebase, fast-forward strategies, and workflows, see [merge-strategies.md](merge-strategies.md).
