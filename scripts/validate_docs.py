@@ -467,7 +467,7 @@ def format_console_output(result: ValidationResult) -> str:
     if result.auto_fixed:
         output.append("\nAuto-fixed:")
         for fix in result.auto_fixed:
-            output.append(f"  → {fix}")
+            output.append(f"  -> {fix}")
 
     # Summary
     output.append("\nSUMMARY")
