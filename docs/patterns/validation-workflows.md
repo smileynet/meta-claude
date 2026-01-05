@@ -30,6 +30,24 @@ claude --debug -p "help me write a commit message"
 claude --debug -p "review this code" --allowedTools "Read,Grep,Glob"
 ```
 
+**Non-Interactive Testing** (for automation):
+```bash
+# Test a slash command - runs without permission prompts
+claude -p "/validate-docs ~/.claude/skills/" --dangerously-skip-permissions
+
+# Test an agent by prompting for its use
+claude -p "use the doc-validator-agent to validate skills/my-skill/" --dangerously-skip-permissions
+
+# Test skill activation via trigger phrase
+claude -p "help me write a commit message for these changes" --dangerously-skip-permissions
+
+# Capture output for validation scripts
+output=$(claude -p "/my-command arg1" --dangerously-skip-permissions 2>&1)
+echo "$output" | grep -q "expected text" && echo "PASS" || echo "FAIL"
+```
+
+> **Note**: `--dangerously-skip-permissions` bypasses all permission prompts. Use only for testing in controlled environments, never in production or with untrusted inputs.
+
 **Validation Commands** (if you have them):
 ```bash
 /validate-skill my-skill --dry-run
@@ -227,6 +245,35 @@ jobs:
             grep -q "^name:" "$f" || exit 1
             grep -q "^description:" "$f" || exit 1
           done
+```
+
+**Local Testing Script** (bash):
+```bash
+#!/bin/bash
+# test-claude-artifacts.sh - Test commands and agents locally
+
+set -e
+
+echo "Testing /validate-docs command..."
+output=$(claude -p "/validate-docs .claude/skills/" --dangerously-skip-permissions 2>&1)
+if echo "$output" | grep -q "Status:.*PASS\|Status:.*WARN"; then
+  echo "  PASS: /validate-docs works"
+else
+  echo "  FAIL: /validate-docs returned unexpected output"
+  echo "$output"
+  exit 1
+fi
+
+echo "Testing doc-validator agent..."
+output=$(claude -p "use doc-validator-agent to check .claude/skills/my-skill/" --dangerously-skip-permissions 2>&1)
+if [ -n "$output" ]; then
+  echo "  PASS: Agent responded"
+else
+  echo "  FAIL: Agent produced no output"
+  exit 1
+fi
+
+echo "All tests passed!"
 ```
 
 ## Anti-Patterns
